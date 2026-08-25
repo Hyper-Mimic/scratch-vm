@@ -1,4 +1,4 @@
-## TurboWarp/scratch-vm
+## HyperMimic/scratch-vm
 
 Modified Scratch VM with a JIT compiler and more features.
 
@@ -6,7 +6,7 @@ This is a drop-in replacement for LLK/scratch-vm.
 
 ## Setup
 
-See https://github.com/TurboWarp/scratch-gui/wiki/Getting-Started to setup the complete TurboWarp environment.
+See https://github.com/HyperMimic/scratch-gui/wiki/Getting-Started to setup the complete HyperMimic environment.
 
 If you just want to play with the VM then it's the same process as upstream scratch-vm.
 
