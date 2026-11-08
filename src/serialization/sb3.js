@@ -561,6 +561,11 @@ const serializeTarget = function (target, extensions) {
     obj.broadcasts = vars.broadcasts;
     [obj.blocks, targetExtensions] = serializeBlocks(target.blocks);
     obj.comments = serializeComments(target.comments);
+    // Frames are scratch-blocks furniture rather than VM data, so they are kept as the XML the GUI
+    // hands over (see Blocks#getFramesXML) on a key vanilla Scratch does not know and ignores.
+    if (target.blocks && target.blocks.getFramesXML && target.blocks.getFramesXML()) {
+        obj.frames = target.blocks.getFramesXML();
+    }
 
     // TODO remove this check/patch when (#1901) is fixed
     if (target.currentCostume < 0 || target.currentCostume >= target.costumes.length) {
@@ -1204,6 +1209,11 @@ const parseScratchObject = function (object, runtime, extensions, zip, assets) {
         }
         // Take a third pass to fix various things that spork broke.
         fixSporkCompatibility(object.blocks);
+    }
+    // Frames: opaque workspace XML to this side (see Blocks#getFramesXML). Handed straight back to
+    // the workspace through emitWorkspaceUpdate, which appends it to blocks.toXML.
+    if (object.frames) {
+        blocks.setFramesXML(object.frames);
     }
     // Costumes from JSON.
     const {costumePromises} = assets;

@@ -1165,7 +1165,31 @@ class Blocks {
      * @return {string} String of XML representing this object's blocks.
      */
     toXML (comments) {
-        return this._scripts.map(script => this.blockToXML(script, comments)).join();
+        return this._scripts.map(script => this.blockToXML(script, comments)).join() +
+            this.getFramesXML();
+    }
+
+    /**
+     * The workspace's frames, as `<frame>` XML.
+     *
+     * Frames (the bordered, titled boxes that group scripts) are drawn entirely by scratch-blocks;
+     * this VM has no model for them, so without somewhere to keep the XML they would exist only in
+     * the workspace: gone as soon as it is rebuilt from `toXML` (switching sprites, switching block
+     * theme) and absent from the project file. The GUI hands the XML over whenever the workspace
+     * reports a change to one, `toXML` puts it back so a rebuild restores them, and the sb3
+     * serializer carries it on the target (a non-standard `frames` key, which vanilla Scratch
+     * ignores).
+     * @returns {string} the `<frame>` elements, or an empty string
+     */
+    getFramesXML () {
+        return this._framesXml || '';
+    }
+
+    /**
+     * @param {?string} xml `<frame>` elements taken from the workspace
+     */
+    setFramesXML (xml) {
+        this._framesXml = typeof xml === 'string' ? xml : '';
     }
 
     /**
