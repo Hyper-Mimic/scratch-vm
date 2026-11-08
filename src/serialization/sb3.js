@@ -377,20 +377,25 @@ const serializeBlocks = function (blocks) {
 
 /**
  * @param {unknown} blocks Output of serializeStandaloneBlocks
- * @returns {{blocks: Block[], extensionURLs: Map<string, string>}}
+ * @returns {{blocks: Block[], extensionURLs: Map<string, string>, comments: Array<object>}}
  */
 const deserializeStandaloneBlocks = blocks => {
     // deep clone to ensure it's safe to modify later
     blocks = JSON.parse(JSON.stringify(blocks));
 
-    if (blocks.extensionURLs) {
+    if (blocks.extensionURLs || blocks.comments) {
         const extensionURLs = new Map();
-        for (const [id, url] of Object.entries(blocks.extensionURLs)) {
-            extensionURLs.set(id, url);
+        if (blocks.extensionURLs) {
+            for (const [id, url] of Object.entries(blocks.extensionURLs)) {
+                extensionURLs.set(id, url);
+            }
         }
         return {
             blocks: blocks.blocks,
-            extensionURLs
+            extensionURLs,
+            // Carried through untouched; shareBlocksToTarget turns these back
+            // into target comments.
+            comments: blocks.comments || []
         };
     }
 
@@ -415,11 +420,45 @@ const serializeStandaloneBlocks = (blocks, runtime) => {
         }
     }
     const extensionURLs = getExtensionURLsToSave(extensionIDs, runtime);
-    if (extensionURLs) {
+
+    // Comments live on the target, not on the blocks: a block only keeps a
+    // `comment` field pointing at its comment id, and the comment definition
+    // itself sits in target.comments. When only the block array is serialised
+    // (backpack items, cross-sprite drags) those definitions are otherwise
+    // dropped and the pasted blocks come back without their notes. Collect the
+    // comments attached to any of the exported blocks and carry them alongside.
+    const comments = [];
+    const target = runtime && runtime.editingTarget;
+    if (target && target.comments) {
+        const seen = new Set();
+        for (const block of blocks) {
+            const commentId = block.comment;
+            if (!commentId || seen.has(commentId)) continue;
+            const comment = target.comments[commentId];
+            if (!comment) continue;
+            seen.add(commentId);
+            comments.push({
+                id: comment.id,
+                blockId: comment.blockId,
+                x: comment.x,
+                y: comment.y,
+                width: comment.width == null ? 100 : comment.width,
+                height: comment.height == null ? 100 : comment.height,
+                minimized: comment.minimized || false,
+                // The runtime Comment holds the full text; the >8000-char split
+                // into extraText only happens when a whole project is written to
+                // .sb3, so the standalone payload keeps the text intact.
+                text: comment.text
+            });
+        }
+    }
+
+    if (extensionURLs || comments.length) {
         return {
             blocks,
             // same format as project.json
-            extensionURLs: extensionURLs
+            extensionURLs: extensionURLs || {},
+            comments: comments.length ? comments : undefined
         };
     }
     // Vanilla Scratch always just uses the block array as-is. To reduce compatibility concerns

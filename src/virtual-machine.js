@@ -1575,8 +1575,8 @@ class VirtualMachine extends EventEmitter {
     shareBlocksToTarget (blocks, targetId, optFromTargetId) {
         const sb3 = require('./serialization/sb3');
 
-        const {blocks: copiedBlocks, extensionURLs} = sb3.deserializeStandaloneBlocks(blocks);
-        newBlockIds(copiedBlocks);
+        const {blocks: copiedBlocks, extensionURLs, comments} = sb3.deserializeStandaloneBlocks(blocks);
+        newBlockIds(copiedBlocks, comments);
         const target = this.runtime.getTargetById(targetId);
 
         if (optFromTargetId) {
@@ -1597,6 +1597,25 @@ class VirtualMachine extends EventEmitter {
             copiedBlocks.forEach(block => {
                 target.blocks.createBlock(block);
             });
+            // Recreate any comments that travelled with the blocks. They are
+            // referenced by block id, which newBlockIds has already remapped to
+            // the freshly created copy, so the note lands on the right block.
+            // Done after the blocks exist, because createComment resolves the
+            // block and links the comment to it.
+            if (comments && comments.length) {
+                for (const comment of comments) {
+                    target.createComment(
+                        comment.id,
+                        comment.blockId,
+                        comment.text,
+                        comment.x,
+                        comment.y,
+                        comment.width,
+                        comment.height,
+                        comment.minimized
+                    );
+                }
+            }
             target.blocks.updateTargetSpecificBlocks(target.isStage);
         });
     }
