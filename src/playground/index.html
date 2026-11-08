@@ -33,6 +33,10 @@
   <p class="description">
     The benchmark is not very useful when the compiler is enabled.
   </p>
+  <p class="description">
+    Use "Import .sb3" to benchmark a project file from your computer instead of
+    a project ID.
+  </p>
   <div class="run-form">
       <input id="project-id" type="text" value="119615668">
       <label>
@@ -40,9 +44,13 @@
         Enable compiler
       </label>
       <button class="run">run</button>
+      <label class="button" id="import-local" for="local-project">Import .sb3</label>
+      <input id="local-project" type="file" accept=".sb3,.sb2" class="visually-hidden" tabindex="-1">
+      <span class="local-project-name"></span>
   </div>
   <p class="run-push">
-    <i>Try a different project, like `130041250`</i>
+    <i>Try a different project, like `130041250`, or import a local .sb3 file</i>
+    &mdash; <a href="player.html">just run a project without profiling</a>
   </p>
 
   <canvas id="scratch-stage"></canvas><br />

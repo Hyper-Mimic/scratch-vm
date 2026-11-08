@@ -1,0 +1,44 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Scratch VM Player</title>
+    <link rel="stylesheet" href="./player.css" type="text/css" media="screen">
+</head>
+<body>
+  <h2>Scratch VM Player</h2>
+  <p class="description">
+    Import a project file (.sb3 or .sb2) and run it. The project starts as soon
+    as it finishes loading; use the green flag to restart it, or drop a file on
+    the stage.
+  </p>
+  <div class="controls">
+      <label class="button" id="import-local" for="local-project">Import .sb3</label>
+      <input id="local-project" type="file" accept=".sb3,.sb2" class="visually-hidden" tabindex="-1">
+      <button id="green-flag" type="button">Green flag</button>
+      <button id="stop" type="button">Stop</button>
+      <label>
+        <input id="turbo" type="checkbox" autocomplete="off">
+        Turbo mode
+      </label>
+      <span id="status" class="status">Loading player&hellip;</span>
+  </div>
+
+  <canvas id="stage" width="480" height="360"></canvas>
+
+  <script src="./player.js"></script>
+  <script>
+      // If the bundle did not load (for example when this file is opened
+      // directly, or when the dev server was started before this page existed)
+      // the page still looks fine but nothing works, so say so.
+      window.addEventListener('load', function () {
+          if (!window.Scratch || !window.Scratch.vm) {
+              document.getElementById('status').innerText =
+                  'Player bundle did not load - run "npm start" and open ' +
+                  'http://localhost:8073/player.html';
+          }
+      });
+  </script>
+</body>
+</html>

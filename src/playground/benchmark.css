@@ -31,6 +31,44 @@ p {
 .render .run-push {
     display: none;
 }
+.run-form button + button,
+.run-form .button {
+    margin-left: 4px;
+}
+.run-form .button {
+    font-family: inherit;
+    display: inline-block;
+    box-sizing: border-box;
+    padding: 1px 6px;
+    border: 2px solid #767676;
+    border-radius: 2px;
+    background-color: #efefef;
+    color: #000;
+    line-height: 1.4;
+    cursor: pointer;
+    user-select: none;
+}
+.run-form .button:hover {
+    background-color: #e5e5e5;
+}
+.run-form .button:active {
+    background-color: #d8d8d8;
+}
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+.local-project-name {
+    margin-left: 8px;
+    color: #666;
+}
 #scratch-stage {
     border: 5px solid black;
     display: block;

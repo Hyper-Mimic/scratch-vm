@@ -67,6 +67,16 @@ const enableCompiler = new URLSearchParams(location.search).get('compiler') === 
 const compilerInput = document.querySelector('#enable-compiler');
 compilerInput.checked = enableCompiler;
 
+const localProjectInput = document.querySelector('#local-project');
+const localProjectName = document.querySelector('.local-project-name');
+
+/**
+ * The benchmark which is currently running, if any. Used by the local project
+ * import to start a new benchmark without reloading the page.
+ * @type {?ProfilerRun}
+ */
+let profilerRun = null;
+
 document.querySelector('.run')
     .addEventListener('click', () => {
         const params = new URLSearchParams(location.search);
@@ -112,6 +122,47 @@ const loadProject = function () {
     getProjectData(id).then(data => Scratch.vm.loadProject(data));
     return id;
 };
+
+/**
+ * Benchmark a project file (.sb3 or .sb2) chosen by the user instead of a
+ * project from the Scratch website.
+ * @param {File} file - the file chosen by the user.
+ */
+const benchmarkLocalProject = function (file) {
+    if (!profilerRun) {
+        return;
+    }
+    if (localProjectName) {
+        localProjectName.innerText = `Loading ${file.name}...`;
+    }
+    file.arrayBuffer()
+        .then(data => {
+            if (localProjectName) {
+                localProjectName.innerText = file.name;
+            }
+            profilerRun.runLocalProject(data, file.name);
+        })
+        .catch(error => {
+            console.error(error);
+            if (localProjectName) {
+                localProjectName.innerText = `Unable to read ${file.name}: ${error.message}`;
+            }
+        });
+};
+
+// The "Import .sb3" control is a <label for="local-project">, so the browser
+// opens the file picker natively without any JavaScript.
+if (localProjectInput) {
+    localProjectInput.addEventListener('change', () => {
+        const file = localProjectInput.files && localProjectInput.files[0];
+        // Clear the input so that choosing the same file again fires another
+        // change event.
+        localProjectInput.value = '';
+        if (file) {
+            benchmarkLocalProject(file);
+        }
+    }, false);
+}
 
 /**
  * @param {Asset} asset - calculate a URL for this asset.
@@ -493,16 +544,37 @@ class ProfilerRun {
         this.maxRecordedTime = maxRecordedTime;
         this.warmUpTime = warmUpTime;
 
+        this.projectId = null;
+        this.isLocalProject = false;
+        this.timers = [];
+        this.workspaceUpdateListener = null;
+
+        this.beginProfiling();
+    }
+
+    /**
+     * Create a new profiler and the views which display its data. May be called
+     * more than once, for example when benchmarking another project.
+     * @returns {boolean} whether profiling could be started.
+     */
+    beginProfiling () {
+        const vm = this.vm;
+
         vm.runtime.enableProfiling();
         const profiler = this.profiler = vm.runtime.profiler;
         vm.runtime.profiler = null;
+
+        if (!profiler) {
+            console.error('Profiling is not available in this browser');
+            return false;
+        }
 
         const runningStats = this.runningStats = new RunningStats(profiler);
         const runningStatsView = this.runningStatsView = new RunningStatsView({
             dom: document.getElementsByClassName('profile-count-group')[0],
 
             runningStats,
-            maxRecordedTime
+            maxRecordedTime: this.maxRecordedTime
         });
 
         const frames = this.frames = new Frames(profiler);
@@ -536,42 +608,83 @@ class ProfilerRun {
             opcodes.update(id, arg, selfTime, totalTime, count);
             frames.update(id, arg, selfTime, totalTime, count);
         };
+
+        return true;
     }
 
-    run () {
-        this.projectId = loadProject();
+    clearTimers () {
+        for (const timer of this.timers) {
+            clearTimeout(timer);
+        }
+        this.timers = [];
+    }
+
+    schedule (callback, delay) {
+        this.timers.push(setTimeout(callback, delay));
+    }
+
+    /**
+     * Cancel the current run (if any) and reset everything needed to start
+     * another one.
+     */
+    resetForRun () {
+        this.clearTimers();
+        if (this.workspaceUpdateListener) {
+            this.vm.removeListener('workspaceUpdate', this.workspaceUpdateListener);
+            this.workspaceUpdateListener = null;
+        }
+        this.vm.stopAll();
+        this.vm.runtime.profiler = null;
+        this.beginProfiling();
+    }
+
+    /**
+     * Reset the page for a new run and tell the parent frame that a project is
+     * being loaded.
+     */
+    startRun () {
+        this.resetForRun();
 
         window.parent.postMessage({
             type: 'BENCH_MESSAGE_LOADING'
         }, '*');
+    }
 
-        this.vm.on('workspaceUpdate', () => {
-            setTimeout(() => {
-                window.parent.postMessage({
-                    type: 'BENCH_MESSAGE_WARMING_UP'
-                }, '*');
-                this.vm.greenFlag();
-            }, 100);
-            setTimeout(() => {
-                window.parent.postMessage({
-                    type: 'BENCH_MESSAGE_ACTIVE'
-                }, '*');
-                this.vm.runtime.profiler = this.profiler;
-            }, 100 + this.warmUpTime);
-            setTimeout(() => {
-                this.vm.stopAll();
-                clearTimeout(this.vm.runtime._steppingInterval);
-                this.vm.runtime.profiler = null;
+    /**
+     * Run through the warm up and recording phases of the currently loaded
+     * project.
+     */
+    beginPhases () {
+        const vm = this.vm;
+        const warmUpTime = this.warmUpTime;
+        const maxRecordedTime = this.maxRecordedTime;
 
-                this.frameTable.render();
-                this.opcodeTable.render();
+        this.schedule(() => {
+            window.parent.postMessage({
+                type: 'BENCH_MESSAGE_WARMING_UP'
+            }, '*');
+            vm.greenFlag();
+        }, 100);
+        this.schedule(() => {
+            window.parent.postMessage({
+                type: 'BENCH_MESSAGE_ACTIVE'
+            }, '*');
+            vm.runtime.profiler = this.profiler;
+        }, 100 + warmUpTime);
+        this.schedule(() => {
+            vm.stopAll();
+            vm.runtime.profiler = null;
 
-                window.parent.postMessage({
-                    type: 'BENCH_MESSAGE_COMPLETE',
-                    frames: this.frames.frames,
-                    opcodes: this.opcodes.opcodes
-                }, '*');
+            this.frameTable.render();
+            this.opcodeTable.render();
 
+            window.parent.postMessage({
+                type: 'BENCH_MESSAGE_COMPLETE',
+                frames: this.frames.frames,
+                opcodes: this.opcodes.opcodes
+            }, '*');
+
+            if (!this.isLocalProject) {
                 setShareLink({
                     fixture: {
                         projectId: this.projectId,
@@ -581,8 +694,51 @@ class ProfilerRun {
                     frames: this.frames.frames,
                     opcodes: this.opcodes.opcodes
                 });
-            }, 100 + this.warmUpTime + this.maxRecordedTime);
+            }
+        }, 100 + warmUpTime + maxRecordedTime);
+    }
+
+    run () {
+        this.isLocalProject = false;
+        this.projectId = loadProject();
+        this.startRun();
+
+        const onWorkspaceUpdate = () => {
+            this.workspaceUpdateListener = null;
+            this.vm.removeListener('workspaceUpdate', onWorkspaceUpdate);
+            this.beginPhases();
+        };
+
+        this.workspaceUpdateListener = onWorkspaceUpdate;
+        this.vm.on('workspaceUpdate', onWorkspaceUpdate);
+    }
+
+    /**
+     * Benchmark a project file instead of a project from the Scratch website.
+     * @param {ArrayBuffer} data - the contents of an .sb3 or .sb2 file.
+     * @param {string} name - the file name, used for display and error messages.
+     */
+    runLocalProject (data, name) {
+        this.isLocalProject = true;
+        this.projectId = name;
+
+        // Apply the checkbox in case it changed since the page was loaded.
+        this.vm.setCompilerOptions({
+            enabled: compilerInput.checked
         });
+
+        this.startRun();
+
+        this.vm.loadProject(data)
+            .then(() => this.beginPhases())
+            .catch(error => {
+                console.error(error);
+                this.clearTimers();
+                window.parent.postMessage({
+                    type: 'BENCH_MESSAGE_ERROR',
+                    message: `Unable to load ${name}: ${error.message}`
+                }, '*');
+            });
     }
 
     render (json) {
@@ -671,11 +827,12 @@ const runBenchmark = function () {
         maxRecordedTime = Number(split[2] || '0') || 6000;
     }
 
-    new ProfilerRun({
+    profilerRun = new ProfilerRun({
         vm,
         warmUpTime,
         maxRecordedTime
-    }).run();
+    });
+    profilerRun.run();
 
     // Instantiate the renderer and connect it to the VM.
     const canvas = document.getElementById('scratch-stage');
