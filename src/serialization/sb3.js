@@ -428,7 +428,12 @@ const serializeStandaloneBlocks = (blocks, runtime) => {
     // dropped and the pasted blocks come back without their notes. Collect the
     // comments attached to any of the exported blocks and carry them alongside.
     const comments = [];
-    const target = runtime && runtime.editingTarget;
+    // Runtime keeps the editing target as `_editingTarget` with a public
+    // getter; `runtime.editingTarget` does not exist (that spelling only
+    // exists on VirtualMachine), so resolve it through the getter.
+    const target = runtime && typeof runtime.getEditingTarget === 'function' ?
+        runtime.getEditingTarget() :
+        (runtime && runtime.editingTarget);
     if (target && target.comments) {
         const seen = new Set();
         for (const block of blocks) {
@@ -437,11 +442,43 @@ const serializeStandaloneBlocks = (blocks, runtime) => {
             const comment = target.comments[commentId];
             if (!comment) continue;
             seen.add(commentId);
+            // Blocks rebuilt from a drag-event XML carry freshly generated ids
+            // (blockToDom runs with opt_noId) and no coordinates, so two things
+            // are needed to keep the note with its blocks:
+            // - the anchor reference is re-pointed at the payload block that
+            //   cites this comment, giving the import a link it can resolve
+            //   (and newBlockIds one it can remap);
+            // - the offset is computed against the LIVE target, where the
+            //   original block ids and numeric coordinates still exist. The
+            //   offset is measured from the anchor's top-level root: the stack
+            //   shape never changes, so it reproduces the same visual position
+            //   wherever the payload is placed later.
+            const anchor = blocks.find(b => b.comment === commentId);
+            let relX = null;
+            let relY = null;
+            if (target.blocks && typeof target.blocks.getBlock === 'function' &&
+                Number.isFinite(comment.x) && Number.isFinite(comment.y)) {
+                let cur = target.blocks.getBlock(comment.blockId);
+                let root = null;
+                while (cur) {
+                    if (cur.topLevel) {
+                        root = cur;
+                        break;
+                    }
+                    cur = cur.parent ? target.blocks.getBlock(cur.parent) : null;
+                }
+                if (root && Number.isFinite(root.x) && Number.isFinite(root.y)) {
+                    relX = comment.x - root.x;
+                    relY = comment.y - root.y;
+                }
+            }
             comments.push({
                 id: comment.id,
-                blockId: comment.blockId,
+                blockId: anchor ? anchor.id : comment.blockId,
                 x: comment.x,
                 y: comment.y,
+                relX,
+                relY,
                 width: comment.width == null ? 100 : comment.width,
                 height: comment.height == null ? 100 : comment.height,
                 minimized: comment.minimized || false,

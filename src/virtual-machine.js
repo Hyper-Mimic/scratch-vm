@@ -1603,13 +1603,50 @@ class VirtualMachine extends EventEmitter {
             // Done after the blocks exist, because createComment resolves the
             // block and links the comment to it.
             if (comments && comments.length) {
+                const byId = new Map();
+                for (const block of copiedBlocks) {
+                    byId.set(block.id, block);
+                }
                 for (const comment of comments) {
+                    let x = Number(comment.x);
+                    let y = Number(comment.y);
+                    // Prefer the stored offset from the anchored stack's
+                    // top-level block: the payload may have been repositioned
+                    // on the way here (drop point, viewport placement), and the
+                    // note must follow its blocks, not the coordinates of the
+                    // workspace it was exported from. Root coordinates can be
+                    // XML-attribute strings, so coerce before the arithmetic.
+                    if (Number.isFinite(comment.relX) && Number.isFinite(comment.relY)) {
+                        let root = byId.get(comment.blockId);
+                        while (root && !root.topLevel && root.parent) {
+                            root = byId.get(root.parent);
+                        }
+                        const rootX = root ? Number(root.x) : NaN;
+                        const rootY = root ? Number(root.y) : NaN;
+                        if (root && root.topLevel && Number.isFinite(rootX) && Number.isFinite(rootY)) {
+                            x = rootX + comment.relX;
+                            y = rootY + comment.relY;
+                        } else {
+                            // Stack root not resolvable; drop the absolute
+                            // coordinates from another workspace rather than
+                            // stranding the note there.
+                            x = NaN;
+                            y = NaN;
+                        }
+                    }
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                        // Comments without usable coordinates are anchored next
+                        // to their stack root instead of staying wherever the
+                        // source workspace had them.
+                        x = 60;
+                        y = -40;
+                    }
                     target.createComment(
                         comment.id,
                         comment.blockId,
                         comment.text,
-                        comment.x,
-                        comment.y,
+                        x,
+                        y,
                         comment.width,
                         comment.height,
                         comment.minimized
